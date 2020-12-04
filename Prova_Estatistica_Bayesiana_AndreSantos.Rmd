@@ -1,0 +1,142 @@
+---
+title: "Prova Estatística Bayesiana"
+author: "André Santos"
+date: "04 de dezembro de 2020"
+output:
+html_document: default
+
+---
+* Universidade: Universidade Nove de Julho
+* Programa: Pós-graduação em Administração
+* Professor: PhD José Eduardo Storopoli
+* Aluno: André Luis Marques Ferreira dos Santos
+* RA: '620150027'
+* Disciplina: Estatística Bayesiana
+
+### Estudo de caso:
+Os gestores de um e-commerce de moda feminina precisam entender quais os fatores que influenciam as vendas.A amostra é do ano de 2005 e contém informações de 730 clientes de diversas regiões do Brasil.As variáveis de interesse são gênero, frequência de compras no mês, se as pessoas moram na capital, formas de pagamento, quantidade de produtos e valor do pedido.
+
+### Objetivo geral:
+Aplicar um modelo de regressão linear generalizado - Binomial em um relatório de vendas de um e-commerce de moda feminina para inferir sobre propensão à compra.
+
+#### Objetivos específicos:
+* Inferir sobre quais variáveis têm mais influência nas vendas
+* Prever quais clientes têm maior propensão à compra
+* Comparar o modelo bayesiano com um modelo matemático de otimização não linear
+
+### Justificativa na escolha do modelo:
+Foi aplicado o modelo binomial sobre os dados pois o objetivo é determinar se os clientes irão ou não comprar no site. Ou seja, nosso problema é binário (compra ou não compra)
+
+### Amostra
+* Tamanho: 1026 observações (50% treino; 50% teste)
+* Total de clientes (**clientes**): número de identificação do cliente na amostra
+* Status da compra (**status**): realizou a compra: 1; desistiu da compra: 0
+* Gênero (**genero**): homem = 1; mulher =0
+* Frequência de compras no mês (**compras**): total de pedidos que uma pessoa realizou em um único mês
+* Região (**capital**): capital = 1; interior = 0
+* Forma de pagamento (**pagto**): crédito = 1; boleto = 0
+* Valor do pedido (**pedido**): valor do pedido com frete
+* Quantidade (**qtde**): quantidade de produtos adquiridos por pedido
+
+#### Dicionário de variáveis
+```{r Tabela}
+library(dplyr)
+Variavel <- c("clientes", "status", "genero", "compras", "capital", "pagto", "pedido", "qtde")
+Valor <- c("ID cliente", "Comprou = 1; desistiu = 0", "Homem = 1, mulher = 0", "Total de compras no mês",
+           "Mora na capital = 1, mora no interior = 0", "Pagou com crédito = 1; pagou no boleto = 0",
+           "Valor do pedido","Quantidade de produtos no pedido")
+tabela <- cbind(Variavel, Valor)
+tabela %>%
+  knitr::kable()
+```
+```{r Leitura do arquivo no github}
+library (readr)
+urlfile="https://raw.githubusercontent.com/andrelmfsantos/Bayes_MLG/main/dataset_prova_bayes.csv"
+mydata<-read_csv2(url(urlfile))
+head(mydata)
+```
+
+### Resumo estatístico
+```{r}
+summary(mydata[-1])
+```
+
+### Histogramas das variáveis
+```{r}
+library(purrr)
+library(tidyr)
+library(ggplot2)
+library(dplyr)
+
+charts <- select(mydata, capital, compras, genero, pagto, pedido, qtde, status)
+charts %>%
+  keep(is.numeric) %>%
+  gather() %>%
+  ggplot(aes(value)) + facet_wrap(~ key, scales = "free") + geom_histogram()
+
+```
+
+### Regressão logística com o rstanarm
+#### Modelo
+```{r}
+# Modelo
+options(mc.cores = parallel::detectCores())
+options(Ncpus = parallel::detectCores())
+
+library(rstanarm)
+model_binomial <- stan_glm(
+  status ~ genero + compras + capital + pagto + pedido + qtde,
+  data = mydata,
+  family = binomial()
+    )
+
+```
+#### Resumo do modelo
+```{r}
+summary(model_binomial)
+```
+
+### Resultados
+#### 1.Coeficientes
+```{r}
+coeff <- exp(model_binomial$coefficients)
+coeff
+```
+
+#### 2.Interpretação dos coeficientes
+```{r}
+library(dplyr)
+Coeficientes <- c("Intercepto", "genero (beta 1)", "compras (beta 2)", "capital (beta 3)", "pagto (beta 4)", "pedido (beta 5)",
+                  "qtde (beta 6)")
+Analise <- c("Dadas todas outras variáveis com valores nulos temos a chance de uma pessoa comprar na loja = 22,1%",
+             "Dado que um cliente é homem aumenta a chance dele comprar na loja em 81%",
+             "Conforme aumenta a frequência de pedidos aumenta a chance de comprar em 6,5%",
+             "Se a pessoa mora na capital cai a chance de comprar em 30,1%",
+             "Pedidos feitos com cartão de crédito aumenta as chances de realizar a compra em 81,9%",
+             "Conforme aumenta o valor do pedido aumenta a chance de realizar uma compra em 0,05%",
+             "Cada produto a mais adicionado ao carrinho cai a chance de compra em 7,6%")
+# coeficientes:
+#(Intercept)      genero     compras     capital       pagto      pedido        qtde 
+#  0.2219928   1.8106876   1.0658785   0.6993211   1.8196994   1.0005085   0.9248157 
+
+result <- cbind(Coeficientes, Analise)
+result %>%
+  knitr::kable()
+```
+
+### Considerações
+O gênero e a forma de pagamento são as variáveis que mais impactam na conversão em compras. É esperado que peidos com valores altos tenham maiores chances de serem efetivos em compras, do que pedidos com valores mais baixos (média de pedidos R$300).
+Residir na capital ou conforme as pessoas adicionam mais produtos no carrinho diminuem as chances de efetivação dos pedidos em compras.
+Este estudo também teve o objetivo de comparar a abordagem bayesiana com a frequentista. Tanto na base de treino, quanto na base de teste o modelo bayesiano foi superior, apresentando menor erro e melhor poder de predição, conforme pode ser observado na tabela a seguir.
+
+```{r}
+Bayesiano <- c("192.551", "177.432")
+Frequentista <- c("202.677", "194.213")
+result <- cbind(Bayesiano, Frequentista)
+rownames(result) <- c("Erro no Treino", "Erro no Teste")
+result %>%
+  knitr::kable()
+```
+
+### Referências
+* [storopoli.github](https://storopoli.github.io/Estatistica-Bayesiana/6-Regressao_Binomial.html)
